@@ -1,1 +1,6 @@
+# Core Requirements for BFS Maze Solver
+# Python >= 3.8
 
+# Optional scientific visualization packages (for docs/generate_docs_and_plots.py)
+matplotlib>=3.7.0
+numpy>=1.24.0
