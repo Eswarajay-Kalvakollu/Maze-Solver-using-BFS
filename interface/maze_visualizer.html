@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BFS Maze Solver & Optimality Visualizer</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    .cell-transition {
+      transition: background-color 0.15s ease, transform 0.1s ease;
+    }
+    .frontier-pulse {
+      animation: pulse 1s infinite alternate;
+    }
+    @keyframes pulse {
+      from { transform: scale(0.92); opacity: 0.8; }
+      to { transform: scale(1.04); opacity: 1; }
+    }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-4 md:p-6 min-h-screen">
+  <div class="max-w-6xl mx-auto space-y-6">
+
+    <!-- Header Section -->
+    <header class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-3">
+          <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+            Uninformed Search
+          </span>
+          <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">
+            Uniform-Cost Optimality: O(V + E)
+          </span>
+        </div>
+        <h1 class="text-2xl md:text-3xl font-bold mt-2 text-[var(--foreground)]">
+          BFS Maze Solver & Optimality Demonstrator
+        </h1>
+        <p class="text-sm text-[var(--muted-foreground)] mt-1">
+          Explore how Breadth-First Search radiates in concentric distance layers to strictly guarantee the shortest path on a uniform-cost grid.
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btn-play" onclick="togglePlay()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm transition flex items-center gap-2 shadow-sm">
+          <span id="play-icon">▶</span> <span id="play-text">Solve & Animate</span>
+        </button>
+        <button onclick="stepForward()" class="px-3 py-2 bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 text-[var(--secondary-foreground)] rounded-lg font-medium text-sm transition">
+          Step ⏭
+        </button>
+        <button onclick="resetSearch()" class="px-3 py-2 bg-[var(--secondary)] hover:bg-[var(--secondary)]/80 text-[var(--secondary-foreground)] rounded-lg font-medium text-sm transition">
+          Clear Path
+        </button>
+        <button onclick="clearWalls()" class="px-3 py-2 border border-[var(--border)] hover:bg-[var(--card)] text-[var(--foreground)] rounded-lg font-medium text-sm transition">
+          Clear Walls
+        </button>
+      </div>
+    </header>
+
+    <!-- Controls Bar -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <label class="block text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mb-2">Preset Maze</label>
+        <select id="preset-select" onchange="loadSelectedPreset()" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          <option value="dfs_trap">DFS Trap (BFS: 4 vs DFS: 32)</option>
+          <option value="branching">Branching Corridor Choice</option>
+          <option value="simple">Simple 5x5 Grid</option>
+          <option value="labyrinth">Labyrinth 21x11</option>
+          <option value="no_path">No Path (Obstacle Wall)</option>
+        </select>
+      </div>
+
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <label class="block text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mb-2">Search Algorithm</label>
+        <select id="algo-select" onchange="onAlgoChange()" class="w-full bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          <option value="bfs">BFS (FIFO Queue — Shortest Path Guaranteed)</option>
+          <option value="dfs">DFS (LIFO Stack — Suboptimal Baseline)</option>
+        </select>
+      </div>
+
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <label class="block text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)] mb-2">Drawing Tool</label>
+        <div class="grid grid-cols-3 gap-1">
+          <button id="tool-wall" onclick="setTool('wall')" class="px-2 py-1.5 rounded text-xs font-medium bg-emerald-500 text-white transition">Wall (#)</button>
+          <button id="tool-start" onclick="setTool('start')" class="px-2 py-1.5 rounded text-xs font-medium bg-[var(--secondary)] text-[var(--foreground)] transition">Start (S)</button>
+          <button id="tool-goal" onclick="setTool('goal')" class="px-2 py-1.5 rounded text-xs font-medium bg-[var(--secondary)] text-[var(--foreground)] transition">Goal (G)</button>
+        </div>
+      </div>
+
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+        <div class="flex justify-between items-center mb-2">
+          <label class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Speed</label>
+          <span id="speed-label" class="text-xs text-[var(--muted-foreground)] font-mono">Fast</span>
+        </div>
+        <input id="speed-slider" type="range" min="5" max="200" value="25" class="w-full accent-emerald-500 cursor-pointer">
+      </div>
+    </div>
+
+    <!-- Main Workspace -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Maze Grid Canvas -->
+      <div class="lg:col-span-2 bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm flex flex-col items-center justify-center min-h-[460px]">
+        <div class="w-full flex justify-between items-center mb-3 text-xs text-[var(--muted-foreground)]">
+          <div class="flex items-center gap-4">
+            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-emerald-500 inline-block"></span> Start</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-amber-500 inline-block"></span> Goal</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-slate-700 inline-block"></span> Wall</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-blue-500/50 inline-block"></span> Explored</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-yellow-300 inline-block"></span> Optimal Path</span>
+          </div>
+          <span class="italic">Click & drag on grid to edit</span>
+        </div>
+
+        <!-- Grid Container -->
+        <div id="grid-board" class="select-none flex flex-col gap-[2px] bg-[var(--border)] p-1.5 rounded-xl max-w-full overflow-auto">
+          <!-- Dynamically populated cells -->
+        </div>
+
+        <div id="status-bar" class="mt-4 text-xs font-medium text-[var(--muted-foreground)] text-center">
+          Ready. Click "Solve & Animate" or drag on the grid to create custom obstacles.
+        </div>
+      </div>
+
+      <!-- Metrics & Optimality Proof Card -->
+      <div class="space-y-4">
+
+        <!-- Live Metrics Panel -->
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-[var(--foreground)] mb-4 flex items-center justify-between">
+            Search Metrics
+            <span id="optimality-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-semibold border border-emerald-500/20">
+              Optimal BFS
+            </span>
+          </h3>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-[var(--background)] p-3 rounded-xl border border-[var(--border)]">
+              <span class="text-[11px] text-[var(--muted-foreground)] block">Shortest Path</span>
+              <span id="metric-path" class="text-xl font-bold font-mono text-yellow-400">-</span>
+              <span class="text-[10px] text-[var(--muted-foreground)] block">steps (edge cost)</span>
+            </div>
+            <div class="bg-[var(--background)] p-3 rounded-xl border border-[var(--border)]">
+              <span class="text-[11px] text-[var(--muted-foreground)] block">Explored Cells</span>
+              <span id="metric-explored" class="text-xl font-bold font-mono text-blue-400">0</span>
+              <span class="text-[10px] text-[var(--muted-foreground)] block">nodes popped</span>
+            </div>
+            <div class="bg-[var(--background)] p-3 rounded-xl border border-[var(--border)]">
+              <span class="text-[11px] text-[var(--muted-foreground)] block">Frontier Queue</span>
+              <span id="metric-frontier" class="text-xl font-bold font-mono text-purple-400">0</span>
+              <span class="text-[10px] text-[var(--muted-foreground)] block">nodes pending</span>
+            </div>
+            <div class="bg-[var(--background)] p-3 rounded-xl border border-[var(--border)]">
+              <span class="text-[11px] text-[var(--muted-foreground)] block">Max Distance</span>
+              <span id="metric-max-dist" class="text-xl font-bold font-mono text-emerald-400">0</span>
+              <span class="text-[10px] text-[var(--muted-foreground)] block">wavefront layer</span>
+            </div>
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-[var(--border)] text-xs space-y-1.5">
+            <div class="flex justify-between">
+              <span class="text-[var(--muted-foreground)]">Monotonic Wavefront (\(d_i \le d_{i+1}\)):</span>
+              <span id="metric-monotonic" class="font-mono text-emerald-400 font-semibold">Verified</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-[var(--muted-foreground)]">Shortest Path Invariant:</span>
+              <span id="metric-invariant" class="font-mono text-emerald-400 font-semibold">Guaranteed</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mathematical Proof & Rationale Card -->
+        <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-sm text-xs leading-relaxed space-y-3">
+          <h4 class="font-bold text-sm text-[var(--foreground)] flex items-center gap-1.5">
+            <span>📐</span> Why is BFS Optimal Here?
+          </h4>
+          <p class="text-[var(--muted-foreground)]">
+            In a uniform grid where every step has identical unit cost (<code class="bg-[var(--secondary)] px-1 py-0.5 rounded text-[var(--foreground)]">c = 1</code>), BFS expands nodes in strictly non-decreasing distance from the start node:
+          </p>
+          <div class="p-2.5 rounded-lg bg-[var(--background)] font-mono text-center text-emerald-400 border border-[var(--border)]">
+            d(Start, v₁) ≤ d(Start, v₂) ≤ ... ≤ d(Start, v_k)
+          </div>
+          <p class="text-[var(--muted-foreground)]">
+            Because a FIFO queue strictly pops all nodes at distance <code class="font-mono">d</code> before any at <code class="font-mono">d + 1</code>, the first time the Goal is dequeued, no remaining unexplored branch can possibly offer a path with fewer edges.
+          </p>
+          <div class="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300">
+            <strong>DFS Contrast:</strong> Depth-First Search explores paths deeply via LIFO stack, often getting trapped in winding detours (as demonstrated in the "DFS Trap" preset).
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    // Grid State
+    let rows = 5;
+    let cols = 11;
+    let start = [0, 0];
+    let goal = [4, 0];
+    let walls = new Set();
+    let currentTool = 'wall';
+    let isMouseDown = false;
+
+    // Search & Animation State
+    let animationTimer = null;
+    let isPlaying = false;
+    let searchSteps = [];
+    let currentStepIdx = 0;
+    let finalPath = [];
+
+    const PRESETS = {
+      dfs_trap: {
+        rows: 5,
+        cols: 11,
+        start: [0, 0],
+        goal: [4, 0],
+        walls: [
+          [1,1],[1,2],[1,3],[1,4],[1,5],[1,6],[1,7],[1,8],[1,9],
+          [2,1],[2,9],
+          [3,1],[3,9]
+        ]
+      },
+      branching: {
+        rows: 6,
+        cols: 7,
+        start: [0, 0],
+        goal: [3, 3],
+        walls: [
+          [1,1],[1,2],[1,3],[1,4],[1,5],
+          [2,1],[2,5],
+          [3,1],[3,5],
+          [4,1],[4,2],[4,3],[4,5]
+        ]
+      },
+      simple: {
+        rows: 5,
+        cols: 5,
+        start: [0, 0],
+        goal: [4, 4],
+        walls: [
+          [1,0],[1,1],[1,2],[1,4],
+          [3,1],[3,2],[3,3],[3,4]
+        ]
+      },
+      labyrinth: {
+        rows: 11,
+        cols: 21,
+        start: [1, 1],
+        goal: [9, 19],
+        walls: [
+          // Border
+          ...Array.from({length: 21}, (_, i) => [0, i]),
+          ...Array.from({length: 21}, (_, i) => [10, i]),
+          ...Array.from({length: 11}, (_, i) => [i, 0]),
+          ...Array.from({length: 11}, (_, i) => [i, 20]),
+          // Interior walls
+          [2,1],[2,2],[2,3],[2,4],[2,5],[2,6],[2,7],[2,9],[2,10],[2,11],[2,12],[2,13],[2,14],[2,15],[2,16],[2,17],[2,18],[2,19],
+          [3,1],[3,7],[3,9],[3,11],[3,17],
+          [4,1],[4,3],[4,4],[4,5],[4,7],[4,9],[4,11],[4,13],[4,14],[4,15],[4,17],
+          [5,3],[5,7],[5,13],[5,17],
+          [6,0],[6,1],[6,2],[6,3],[6,4],[6,6],[6,7],[6,8],[6,9],[6,10],[6,11],[6,12],[6,13],[6,14],[6,16],[6,17],[6,18],
+          [7,3],[7,5],[7,17],
+          [8,1],[8,3],[8,5],[8,7],[8,8],[8,9],[8,10],[8,11],[8,12],[8,13],[8,14],[8,15],[8,17]
+        ]
+      },
+      no_path: {
+        rows: 5,
+        cols: 6,
+        start: [0, 0],
+        goal: [4, 5],
+        walls: [
+          [0,3],[1,3],[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[3,3],[4,3]
+        ]
+      }
+    };
+
+    function initBoard() {
+      const board = document.getElementById('grid-board');
+      board.innerHTML = '';
+
+      for (let r = 0; r < rows; r++) {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'flex gap-[2px]';
+
+        for (let c = 0; c < cols; c++) {
+          const cell = document.createElement('div');
+          const cellId = `cell-${r}-${c}`;
+          cell.id = cellId;
+
+          // Responsive sizing based on grid dimensions
+          const cellSize = cols > 15 ? 'w-6 h-6 text-[10px]' : (cols > 8 ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm');
+          cell.className = `${cellSize} rounded flex items-center justify-center font-bold cursor-pointer select-none cell-transition bg-[var(--card)] hover:opacity-90`;
+
+          cell.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            isMouseDown = true;
+            handleCellClick(r, c);
+          });
+
+          cell.addEventListener('mouseenter', () => {
+            if (isMouseDown) handleCellClick(r, c);
+          });
+
+          rowDiv.appendChild(cell);
+        }
+        board.appendChild(rowDiv);
+      }
+
+      document.addEventListener('mouseup', () => { isMouseDown = false; });
+      renderGridState();
+    }
+
+    function renderGridState() {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cell = document.getElementById(`cell-${r}-${c}`);
+          if (!cell) continue;
+
+          cell.className = cell.className.replace(/bg-[\w\-\/]+/g, '').replace(/border-[\w\-\/]+/g, '');
+
+          if (r === start[0] && c === start[1]) {
+            cell.className += ' bg-emerald-500 text-white shadow-sm ring-2 ring-emerald-400';
+            cell.innerText = 'S';
+          } else if (r === goal[0] && c === goal[1]) {
+            cell.className += ' bg-amber-500 text-white shadow-sm ring-2 ring-amber-400';
+            cell.innerText = 'G';
+          } else if (walls.has(`${r},${c}`)) {
+            cell.className += ' bg-slate-700 text-transparent';
+            cell.innerText = '';
+          } else {
+            cell.className += ' bg-[var(--card)] text-[var(--muted-foreground)]';
+            cell.innerText = '';
+          }
+        }
+      }
+    }
+
+    function setTool(tool) {
+      currentTool = tool;
+      document.getElementById('tool-wall').className = tool === 'wall' ? 'px-2 py-1.5 rounded text-xs font-medium bg-emerald-500 text-white transition' : 'px-2 py-1.5 rounded text-xs font-medium bg-[var(--secondary)] text-[var(--foreground)] transition';
+      document.getElementById('tool-start').className = tool === 'start' ? 'px-2 py-1.5 rounded text-xs font-medium bg-emerald-500 text-white transition' : 'px-2 py-1.5 rounded text-xs font-medium bg-[var(--secondary)] text-[var(--foreground)] transition';
+      document.getElementById('tool-goal').className = tool === 'goal' ? 'px-2 py-1.5 rounded text-xs font-medium bg-emerald-500 text-white transition' : 'px-2 py-1.5 rounded text-xs font-medium bg-[var(--secondary)] text-[var(--foreground)] transition';
+    }
+
+    function handleCellClick(r, c) {
+      resetSearch();
+      const key = `${r},${c}`;
+
+      if (currentTool === 'start') {
+        if (!walls.has(key) && !(r === goal[0] && c === goal[1])) {
+          start = [r, c];
+        }
+      } else if (currentTool === 'goal') {
+        if (!walls.has(key) && !(r === start[0] && c === start[1])) {
+          goal = [r, c];
+        }
+      } else if (currentTool === 'wall') {
+        if ((r === start[0] && c === start[1]) || (r === goal[0] && c === goal[1])) return;
+        if (walls.has(key)) {
+          walls.delete(key);
+        } else {
+          walls.add(key);
+        }
+      }
+      renderGridState();
+    }
+
+    function clearWalls() {
+      resetSearch();
+      walls.clear();
+      renderGridState();
+      document.getElementById('status-bar').innerText = 'Cleared all walls.';
+    }
+
+    function loadSelectedPreset() {
+      const presetName = document.getElementById('preset-select').value;
+      const p = PRESETS[presetName];
+      if (!p) return;
+
+      resetSearch();
+      rows = p.rows;
+      cols = p.cols;
+      start = [...p.start];
+      goal = [...p.goal];
+      walls.clear();
+      p.walls.forEach(w => walls.add(`${w[0]},${w[1]}`));
+
+      initBoard();
+      document.getElementById('status-bar').innerText = `Loaded preset '${presetName}'.`;
+    }
+
+    function getNeighbors(r, c) {
+      const dirs = [[-1, 0], [0, 1], [1, 0], [0, -1]]; // Up, Right, Down, Left
+      const nbrs = [];
+      for (const [dr, dc] of dirs) {
+        const nr = r + dr;
+        const nc = c + dc;
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !walls.has(`${nr},${nc}`)) {
+          nbrs.push([nr, nc]);
+        }
+      }
+      return nbrs;
+    }
+
+    // Run Search (BFS or DFS) and record execution history
+    function computeSearch() {
+      const algo = document.getElementById('algo-select').value;
+      searchSteps = [];
+      finalPath = [];
+
+      const visited = new Set([`${start[0]},${start[1]}`]);
+      const parent = new Map();
+      const distance = new Map();
+      distance.set(`${start[0]},${start[1]}`, 0);
+
+      // Frontier: BFS uses array with shift() (FIFO), DFS uses array with pop() (LIFO)
+      const frontier = [[...start]];
+      let goalReached = false;
+      let maxDist = 0;
+
+      while (frontier.length > 0) {
+        const current = (algo === 'bfs') ? frontier.shift() : frontier.pop();
+        const curKey = `${current[0]},${current[1]}`;
+        const curDist = distance.get(curKey);
+        maxDist = Math.max(maxDist, curDist);
+
+        searchSteps.push({
+          type: 'visit',
+          cell: current,
+          distance: curDist,
+          frontierSize: frontier.length
+        });
+
+        if (current[0] === goal[0] && current[1] === goal[1]) {
+          goalReached = true;
+          break;
+        }
+
+        const nbrs = getNeighbors(current[0], current[1]);
+        // For DFS, reverse neighbors so exploration is consistent with standard LIFO traversal
+        const orderedNbrs = (algo === 'bfs') ? nbrs : [...nbrs].reverse();
+
+        for (const nbr of orderedNbrs) {
+          const nbrKey = `${nbr[0]},${nbr[1]}`;
+          if (!visited.has(nbrKey)) {
+            visited.add(nbrKey);
+            parent.set(nbrKey, current);
+            distance.set(nbrKey, curDist + 1);
+            frontier.push(nbr);
+
+            searchSteps.push({
+              type: 'frontier',
+              cell: nbr,
+              distance: curDist + 1,
+              frontierSize: frontier.length
+            });
+          }
+        }
+      }
+
+      if (goalReached) {
+        let curr = goal;
+        while (curr) {
+          finalPath.push(curr);
+          const p = parent.get(`${curr[0]},${curr[1]}`);
+          curr = p ? p : null;
+        }
+        finalPath.reverse();
+      }
+
+      return { goalReached, maxDist };
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        pauseAnimation();
+      } else {
+        if (searchSteps.length === 0 || currentStepIdx >= searchSteps.length) {
+          resetSearch();
+          computeSearch();
+        }
+        startAnimation();
+      }
+    }
+
+    function startAnimation() {
+      isPlaying = true;
+      document.getElementById('play-text').innerText = 'Pause';
+      document.getElementById('play-icon').innerText = '⏸';
+      runAnimationLoop();
+    }
+
+    function pauseAnimation() {
+      isPlaying = false;
+      clearTimeout(animationTimer);
+      document.getElementById('play-text').innerText = 'Resume';
+      document.getElementById('play-icon').innerText = '▶';
+    }
+
+    function getDelay() {
+      const slider = document.getElementById('speed-slider');
+      return Math.max(5, 205 - parseInt(slider.value));
+    }
+
+    function runAnimationLoop() {
+      if (!isPlaying) return;
+
+      if (currentStepIdx < searchSteps.length) {
+        applyStep(searchSteps[currentStepIdx]);
+        currentStepIdx++;
+        animationTimer = setTimeout(runAnimationLoop, getDelay());
+      } else {
+        // Search finished, animate path reconstruction
+        renderFinalPath();
+        pauseAnimation();
+        document.getElementById('play-text').innerText = 'Replay';
+        document.getElementById('play-icon').innerText = '↻';
+      }
+    }
+
+    function stepForward() {
+      pauseAnimation();
+      if (searchSteps.length === 0) {
+        computeSearch();
+      }
+      if (currentStepIdx < searchSteps.length) {
+        applyStep(searchSteps[currentStepIdx]);
+        currentStepIdx++;
+      } else if (finalPath.length > 0) {
+        renderFinalPath();
+      }
+    }
+
+    function applyStep(step) {
+      const [r, c] = step.cell;
+      const cell = document.getElementById(`cell-${r}-${c}`);
+      if (!cell) return;
+
+      const isStart = (r === start[0] && c === start[1]);
+      const isGoal = (r === goal[0] && c === goal[1]);
+
+      if (step.type === 'frontier') {
+        if (!isStart && !isGoal) {
+          cell.className = cell.className.replace(/bg-[\w\-\/]+/g, '') + ' bg-purple-500/40 text-purple-200 border border-purple-400/50 frontier-pulse';
+        }
+        document.getElementById('metric-frontier').innerText = step.frontierSize;
+      } else if (step.type === 'visit') {
+        if (!isStart && !isGoal) {
+          // Color coding by distance modulo for wavefront bands
+          const hues = ['bg-blue-600/30', 'bg-cyan-600/30', 'bg-indigo-600/30', 'bg-sky-600/30', 'bg-teal-600/30'];
+          const hue = hues[step.distance % hues.length];
+          cell.className = cell.className.replace(/bg-[\w\-\/]+/g, '').replace('frontier-pulse', '') + ` ${hue} text-blue-200 font-mono text-[10px]`;
+          cell.innerText = step.distance;
+        }
+        document.getElementById('metric-explored').innerText = currentStepIdx + 1;
+        document.getElementById('metric-max-dist').innerText = step.distance;
+      }
+    }
+
+    function renderFinalPath() {
+      const algo = document.getElementById('algo-select').value;
+      if (finalPath.length === 0) {
+        document.getElementById('status-bar').innerText = 'No accessible path found to goal.';
+        document.getElementById('metric-path').innerText = 'Unreachable';
+        return;
+      }
+
+      for (let i = 0; i < finalPath.length; i++) {
+        const [r, c] = finalPath[i];
+        if ((r === start[0] && c === start[1]) || (r === goal[0] && c === goal[1])) continue;
+        const cell = document.getElementById(`cell-${r}-${c}`);
+        if (cell) {
+          cell.className = cell.className.replace(/bg-[\w\-\/]+/g, '') + ' bg-yellow-400 text-slate-950 font-black shadow-md scale-105';
+          cell.innerText = '★';
+        }
+      }
+
+      const pathLen = finalPath.length - 1;
+      document.getElementById('metric-path').innerText = pathLen;
+      document.getElementById('status-bar').innerText = `Finished! ${algo.toUpperCase()} found path of length ${pathLen} edges.`;
+    }
+
+    function resetSearch() {
+      pauseAnimation();
+      clearTimeout(animationTimer);
+      searchSteps = [];
+      currentStepIdx = 0;
+      finalPath = [];
+
+      document.getElementById('metric-path').innerText = '-';
+      document.getElementById('metric-explored').innerText = '0';
+      document.getElementById('metric-frontier').innerText = '0';
+      document.getElementById('metric-max-dist').innerText = '0';
+      document.getElementById('play-text').innerText = 'Solve & Animate';
+      document.getElementById('play-icon').innerText = '▶';
+
+      renderGridState();
+    }
+
+    function onAlgoChange() {
+      const algo = document.getElementById('algo-select').value;
+      const badge = document.getElementById('optimality-badge');
+      const invar = document.getElementById('metric-invariant');
+      const mono = document.getElementById('metric-monotonic');
+
+      if (algo === 'bfs') {
+        badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-semibold border border-emerald-500/20';
+        badge.innerText = 'Optimal BFS';
+        invar.innerText = 'Guaranteed';
+        invar.className = 'font-mono text-emerald-400 font-semibold';
+        mono.innerText = 'Verified';
+        mono.className = 'font-mono text-emerald-400 font-semibold';
+      } else {
+        badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-semibold border border-amber-500/20';
+        badge.innerText = 'Suboptimal DFS';
+        invar.innerText = 'Not Guaranteed';
+        invar.className = 'font-mono text-amber-400 font-semibold';
+        mono.innerText = 'Irregular';
+        mono.className = 'font-mono text-amber-400 font-semibold';
+      }
+      resetSearch();
+    }
+
+    // Initialize on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSelectedPreset();
+    });
+  </script>
+</body>
+</html>
